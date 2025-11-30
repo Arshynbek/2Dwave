@@ -1,7 +1,13 @@
 # ============================================================
-# PINN for u_tt - div(H ∇u) = f on (t,x,y) in [0,T] × [0,1]^2
-# Hard constraints: u(0,x,y)=phi(x,y), u_t(0,x,y)=0, u|_{∂Ω}=0
-# u_theta(t,x,y) = phi(x,y) + t^2 * x(1-x) y(1-y) * N_theta( t', x', y' )
+# PINN for u_tt - div(h ∇u) = f on (t,x,y) in [0,T] × [0,1]^2
+# IC and BC:
+#   u(0,x,y) = u0(x,y),
+#   u_t(0,x,y) = u1(x,y) (here u1 ≡ 0),
+#   u|_{∂Ω} = 0.
+# Trial:
+#   u_theta(t,x,y) = u0(x,y) + t*u1(x,y)
+#                    + t^2 * x(1-x) y(1-y) * N_theta( t', x', y' ).
+# For this test problem, u1(x,y) ≡ 0.
 # ============================================================
 
 import torch
@@ -25,22 +31,28 @@ torch.set_default_dtype(dtype)
 torch.manual_seed(1234)
 np.random.seed(1234)
 
-# Final time (match your paper; change if needed)
+# Final time
 T_final = 1.0
 
 # -----------------------------
 # Exact data and coefficients
 # -----------------------------
-def phi(x, y):
+def u0(x, y):
+    """Initial displacement u(0,x,y)."""
     return torch.sin(torch.pi * x) * torch.sin(torch.pi * y)
+
+def u1(x, y):
+    """Initial velocity u_t(0,x,y). For this test: identically zero."""
+    return torch.zeros_like(x)
 
 def exact_u(t, x, y):
     return torch.cos(t) * torch.sin(torch.pi * x) * torch.sin(torch.pi * y)
 
-def H(x, y):
+def h(x, y):
     return x**2 + y**2
 
 def f(t, x, y):
+    # Right-hand side corresponding to u_tt - div(h ∇u) = f
     sxs = torch.sin(torch.pi * x); cxs = torch.cos(torch.pi * x)
     sys = torch.sin(torch.pi * y); cys = torch.cos(torch.pi * y)
     term1 = sxs * sys
@@ -49,10 +61,10 @@ def f(t, x, y):
     term4 = 2.0 * (torch.pi**2) * (x**2 + y**2) * sxs * sys
     return -torch.cos(t) * (term1 + term2 + term3 - term4)
 
-# ---- NEW: exact energy E_exact(t) = 1/8 sin^2 t + (π^2/6) cos^2 t
+# Exact energy: E_exact(t) = 1/8 sin^2 t + (π^2/6) cos^2 t
 def exact_energy_np(t):
     t = np.asarray(t, dtype=float)
-    return 0.125*np.sin(t)**2 + (np.pi**2/6.0)*np.cos(t)**2
+    return 0.125 * np.sin(t)**2 + (np.pi**2 / 6.0) * np.cos(t)**2
 
 # -----------------------------
 # MLP (with input normalization inside)
@@ -77,6 +89,7 @@ class MLP(nn.Module):
             nn.init.zeros_(m.bias)
 
     def forward(self, t, x, y):
+        # Normalise inputs to [-1,1]^3
         t_hat = 2.0 * t / self.T - 1.0
         x_hat = 2.0 * x - 1.0
         y_hat = 2.0 * y - 1.0
@@ -87,12 +100,19 @@ class MLP(nn.Module):
 # Trial solution wrapper (hard constraints)
 # -----------------------------
 class PINNTrial(nn.Module):
+    """
+    Trial solution:
+      u_theta(t,x,y) = u0(x,y) + t*u1(x,y)
+                       + t^2 * x(1-x) y(1-y) * N_theta(t,x,y)
+    For this problem, u1 ≡ 0, so we recover the original ansatz.
+    """
     def __init__(self, base_net: nn.Module):
         super().__init__()
         self.net = base_net
+
     def forward(self, t, x, y):
         g = (t**2) * (x * (1.0 - x)) * (y * (1.0 - y))
-        return phi(x, y) + g * self.net(t, x, y)
+        return u0(x, y) + t * u1(x, y) + g * self.net(t, x, y)
 
 # -----------------------------
 # Collocation sampling (Sobol)
@@ -109,23 +129,34 @@ def sample_collocation_sobol(N, T=T_final, device=device):
 # -----------------------------
 # Residual and loss
 # -----------------------------
-def pde_residual(u_model: PINNTrial, t, x, y):
+def pde_residual_theta(u_model: PINNTrial, t, x, y):
+    """
+    PDE residual:
+      R_theta = u_tt - ∂_x(h u_x) - ∂_y(h u_y) - f
+    with all derivatives computed by automatic differentiation.
+    """
     u = u_model(t, x, y)
+
+    # Time derivatives
     u_t  = grad(u, t, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_tt = grad(u_t, t, grad_outputs=torch.ones_like(u_t), create_graph=True)[0]
+
+    # Spatial derivatives
     u_x  = grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_y  = grad(u, y, grad_outputs=torch.ones_like(u), create_graph=True)[0]
-    Hv = H(x, y)
-    Hux = Hv * u_x
-    dHx = grad(Hux, x, grad_outputs=torch.ones_like(Hux), create_graph=True)[0]
-    Huy = Hv * u_y
-    dHy = grad(Huy, y, grad_outputs=torch.ones_like(Huy), create_graph=True)[0]
-    R = u_tt - (dHx + dHy) - f(t, x, y)
-    return R
+
+    hv = h(x, y)
+    hux = hv * u_x
+    duy_dx = grad(hux, x, grad_outputs=torch.ones_like(hux), create_graph=True)[0]
+    huy = hv * u_y
+    duy_dy = grad(huy, y, grad_outputs=torch.ones_like(huy), create_graph=True)[0]
+
+    R_theta = u_tt - (duy_dx + duy_dy) - f(t, x, y)
+    return R_theta
 
 def loss_residual(u_model: PINNTrial, t, x, y):
-    R = pde_residual(u_model, t, x, y)
-    return torch.mean(R**2)
+    R_theta = pde_residual_theta(u_model, t, x, y)
+    return torch.mean(R_theta**2)
 
 # -----------------------------
 # Build model
@@ -165,6 +196,7 @@ optimizer_lbfgs = torch.optim.LBFGS(
     model.parameters(), max_iter=500, tolerance_grad=1e-9,
     tolerance_change=1e-12, line_search_fn='strong_wolfe'
 )
+
 def closure():
     optimizer_lbfgs.zero_grad(set_to_none=True)
     L = loss_residual(model, t_fix, x_fix, y_fix)
@@ -185,13 +217,13 @@ def grid_xy(n=101, device=device):
     X, Y = torch.meshgrid(x.squeeze(1), y.squeeze(1), indexing='ij')
     return X, Y
 
-# ---- NEW: 2D trapezoidal rule weights on [0,1]x[0,1]
+# 2D trapezoidal rule weights on [0,1]x[0,1]
 def trapz2d_weights(n, device=None, dtype=None):
     w1 = torch.ones(n, dtype=dtype, device=device)
     w1[0] = 0.5; w1[-1] = 0.5
     return torch.outer(w1, w1)  # (n,n)
 
-# ---- NEW: compute discrete energy on an n×n grid
+# Compute discrete energy on an n×n grid
 def pinn_energy(model, t_scalar, n=129, device=device, dtype=dtype):
     # grid (make leaves with grads)
     x1d = torch.linspace(0.0, 1.0, n, device=device, dtype=dtype).reshape(-1,1)
@@ -212,8 +244,8 @@ def pinn_energy(model, t_scalar, n=129, device=device, dtype=dtype):
     u_x = grad(u, x, grad_outputs=ones, create_graph=False, retain_graph=True)[0]
     u_y = grad(u, y, grad_outputs=ones, create_graph=False, retain_graph=True)[0]
 
-    Hv = H(x, y)  # (n,n,1)
-    integrand = 0.5 * (u_t**2 + Hv*(u_x**2 + u_y**2))  # (n,n,1)
+    hv = h(x, y)  # (n,n,1)
+    integrand = 0.5 * (u_t**2 + hv * (u_x**2 + u_y**2))  # (n,n,1)
     integrand2d = integrand.squeeze(-1)
 
     W  = trapz2d_weights(n, device=device, dtype=dtype)
@@ -221,7 +253,6 @@ def pinn_energy(model, t_scalar, n=129, device=device, dtype=dtype):
     Eh = torch.sum(W * integrand2d) * dx * dy
     return float(Eh)
 
-# ---- (optional) convenience wrapper for series evals
 def pinn_energy_series(model, t_array, n=129):
     return np.array([pinn_energy(model, float(tt), n=n) for tt in np.asarray(t_array)])
 
@@ -240,13 +271,11 @@ with torch.no_grad():
 
 print(f"[Eval @ T={T_final}]  Max error = {max_err:.6e},  L2 error = {l2_err:.6e}")
 
-# ---- NEW: Energy at T and energy curve over time
-# Single-time comparison at T
+# Energy at T and energy curve over time
 E_pinn_T  = pinn_energy(model, T_final, n=129)
 E_exact_T = exact_energy_np(T_final)
 print(f"[Energy @ T={T_final}]  PINN = {E_pinn_T:.8e}  |  exact = {E_exact_T:.8e}  |  rel.err = {abs(E_pinn_T-E_exact_T)/max(1e-14,E_exact_T):.3e}")
 
-# Time series (optional, looks nice in paper)
 ts = np.linspace(0.0, T_final, 41)
 E_pinn_series = np.array([pinn_energy(model, float(tt), n=129) for tt in ts])
 E_exact_series = exact_energy_np(ts)
@@ -275,10 +304,10 @@ ax3.set_title(r'Error $|u_\theta-u|$'); ax3.set_xlabel('x'); ax3.set_ylabel('y')
 plt.tight_layout()
 plt.show()
 
-# ---- NEW: Energy plot (PINN vs exact)
+# Energy plot (PINN vs exact)
 plt.figure(figsize=(8,5))
-plt.plot(ts, E_pinn_series, 'b-', fillstyle='none',  markersize=4,  label='PINN energy $E_h(t)$')
-plt.plot(ts, E_exact_series,  'ro', fillstyle='none',  markersize=4, label='Exact energy $E_{\\mathrm{exact}}(t)$')
+plt.plot(ts, E_pinn_series, 'b-',  markersize=4, label='PINN energy $E_h(t)$')
+plt.plot(ts, E_exact_series,  'ro', fillstyle='none', markersize=4, label='Exact energy $E_{\mathrm{exact}}(t)$')
 plt.xlabel('t'); plt.ylabel('Energy'); plt.title('Energy (PINN vs Exact)')
 plt.grid(True, alpha=0.3); plt.legend(); plt.tight_layout(); plt.show()
 
@@ -315,6 +344,7 @@ plt.semilogy(adam_x_plot,  adam_y_plot,  label='Adam',  linewidth=2)
 plt.semilogy(lbfgs_x_plot, lbfgs_y_plot, label='L-BFGS (closure evals)', linewidth=2)
 plt.xlabel('Iteration'); plt.ylabel('Residual MSE Loss'); plt.title('Training Loss (Adam → L-BFGS)')
 plt.grid(True, which='both', alpha=0.3); plt.legend(); plt.tight_layout(); plt.show()
+
 stop = timeit.default_timer()
 print('Time: ', stop - start)
 
