@@ -1,3 +1,15 @@
+# ============================================================
+# Model problem:
+#   u_tt - div(h ∇u) = f on (t,x,y) in [0,T] × [0,1]^2
+# IC and BC:
+#   u(0,x,y) = u0(x,y),
+#   u_t(0,x,y) = u1(x,y) (here u1 ≡ 0),
+#   u|_{∂Ω} = 0.
+# Exact solution: u(t,x,y) = cos(t) sin(πx) sin(πy),
+# h(x,y) = x^2 + y^2,   f chosen accordingly.
+# ============================================================
+
+
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -8,21 +20,12 @@ import matplotlib.tri as mtri
 from matplotlib.patches import Rectangle
 
 tracemalloc.start()  # start tracing
-
-# -------------------------------------------------
-# Model problem:
-#   u_tt - div( h(x,y) ∇u ) = f  in (0,T]×(0,1)^2
-#   u(0,x,y) = u0(x,y),   u_t(0,x,y) = 0,
-#   u = 0 on ∂Ω.
-# Exact solution: u(t,x,y) = cos(t) sin(πx) sin(πy),
-# h(x,y) = x^2 + y^2,   f chosen accordingly.
-# -------------------------------------------------
 start = timeit.default_timer()
 
 # -------------------------------
 # Exact solution, forcing, coeff
 # -------------------------------
-def exact_u(t, x, y):
+def exact_solution(t, x, y):
     return np.cos(t) * np.sin(np.pi * x) * np.sin(np.pi * y)
 
 def exact_grad_u(t, x, y):
@@ -30,9 +33,9 @@ def exact_grad_u(t, x, y):
     uy = np.cos(t) * np.pi * np.sin(np.pi * x) * np.cos(np.pi * y)
     return ux, uy
 
-def f(t, x, y):
+def f_func(t, x, y):
     """
-    Forcing chosen so that exact_u solves
+    Forcing chosen so that exact_solution solves
       u_tt - div(h ∇u) = f
     with h(x,y) = x^2 + y^2.
     """
@@ -150,7 +153,7 @@ def assemble_load(nodes, elems, t):
             xq = lmb*X[0,0] + mu*X[1,0] + nu*X[2,0]
             yq = lmb*X[0,1] + mu*X[1,1] + nu*X[2,1]
             wq = quad_w[q] * A
-            fq = f(t, xq, yq)
+            fq = f_func(t, xq, yq)
             phi = np.array([lmb, mu, nu])
             F[idx] += fq * phi * wq
     return F
@@ -193,7 +196,7 @@ def leapfrog_lumped(M, K, nodes, elems, dt, T, track_energy=True):
     V = np.zeros((N, nsteps+1))  # will fill after U is known (central diffs)
 
     # Initial conditions (from exact solution at t=0), u_t(0)=0
-    U[:,0]   = exact_u(0.0, nodes[:,0], nodes[:,1])
+    U[:,0]   = exact_solution(0.0, nodes[:,0], nodes[:,1])
     V[:,0]   = 0.0
     # Enforce Dirichlet at boundary nodes explicitly
     U[bnd,0] = 0.0
@@ -257,7 +260,7 @@ def errors_L2_H1(Uvec, nodes, elems, t, weighted_by_H=False):
             wq = quad_w[q]*A
             phi = np.array([lmb,mu,nu])
             uh = np.dot(phi, Uvec[idx])
-            ue = exact_u(t, xq, yq)
+            ue = exact_solution(t, xq, yq)
             ex, ey = exact_grad_u(t, xq, yq)
 
             eL2 += (uh-ue)**2 * wq
@@ -273,7 +276,7 @@ def errors_L2_H1(Uvec, nodes, elems, t, weighted_by_H=False):
 # Convergence driver
 # ---------------------------------
 def max_error_nodal(Uvec, nodes, t):
-    ue = exact_u(t, nodes[:,0], nodes[:,1])
+    ue = exact_solution(t, nodes[:,0], nodes[:,1])
     return np.max(np.abs(Uvec - ue))
 
 def run_once(nx, ny, T, c_dt=0.25, track_energy=False):
@@ -386,14 +389,14 @@ if __name__ == "__main__":
     y = np.linspace(0.0, 1.0, ny_plot + 1)
     X, Y = np.meshgrid(x, y)  # shapes (ny+1, nx+1)
 
-    u_num_grid = U[:, -1].reshape((ny_plot + 1, nx_plot + 1))
-    u_exact_T = exact_u(Tfinal, X, Y)
-    err_grid = np.abs(u_num_grid - u_exact_T)
+    u_FEM = U[:, -1].reshape((ny_plot + 1, nx_plot + 1))
+    u_exact_T = exact_solution(Tfinal, X, Y)
+    err_grid = np.abs(u_FEM - u_exact_T)
 
     fig = plt.figure(figsize=(18, 5))
 
     ax1 = fig.add_subplot(131, projection='3d')
-    ax1.plot_surface(X, Y, u_num_grid, cmap='viridis', rstride=1, cstride=1)
+    ax1.plot_surface(X, Y, u_FEM, cmap='viridis', rstride=1, cstride=1)
     ax1.set_title('Numerical Solution')
     ax1.set_xlabel('x'); ax1.set_ylabel('y'); ax1.set_zlabel('u')
 
@@ -411,6 +414,7 @@ if __name__ == "__main__":
     plt.show()
 
     # Visualize triangulation + zoomed corner
+
     plot_mesh(nodes, elems, nx=nx_plot, ny=ny_plot, zoom_cells=5)
 
     # Optional: report final relative energy error

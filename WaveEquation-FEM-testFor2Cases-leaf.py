@@ -10,9 +10,14 @@ start = timeit.default_timer()
 # -------------------------------
 # Case selector for h(x)
 # -------------------------------
-SELECT_CASE = 1  # change to 1 or 2
+SELECT_CASE = 2  # change to 1 or 2
 
 def h_case_vals(x, case_id):
+    """
+    x: array of x-locations (faces)
+    case_id: 1 or 2
+    returns h(x) with broadcasting over y.
+    """
     x = np.asarray(x)
     if case_id == 1:
         h = np.where(x < 0.75, 1.0, 0.1)
@@ -161,30 +166,30 @@ def run_once(nx, ny, T, c_dt=0.25):
 # Main
 # ---------------------------------
 if __name__ == "__main__":
-    Tfinal = 0.75
-    nx_plot = ny_plot = 160
+    T = 0.25
+    Nx = Ny = 160
 
-    h, dt, pack = run_once(nx_plot, ny_plot, Tfinal, c_dt=0.25)
+    h, dt, pack = run_once(Nx, Ny, T, c_dt=0.25)
     nodes, elems, U = pack
 
     # Final-time surface (numerical u at T)
-    x = np.linspace(0.0, 1.0, nx_plot + 1)
-    y = np.linspace(0.0, 1.0, ny_plot + 1)
+    x = np.linspace(0.0, 1.0, Nx + 1)
+    y = np.linspace(0.0, 1.0, Ny + 1)
     X, Y = np.meshgrid(x, y)
-    u_num_grid = U[:, -1].reshape((ny_plot + 1, nx_plot + 1))
+    u_FEM = U[:, -1].reshape((Ny + 1, Nx + 1))
 
-    fig = plt.figure(figsize=(8, 5))
+    fig = plt.figure(figsize=(8, 6))
     ax1 = fig.subplots(subplot_kw={"projection": "3d"})
-    surf = ax1.plot_surface(X, Y, u_num_grid, cmap='viridis', edgecolor='black',
+    surf = ax1.plot_surface(X, Y, u_FEM, cmap='viridis', edgecolor='black',
                             linewidth=0.2, rstride=1, cstride=1)
     fig.colorbar(surf, ax=ax1, shrink=0.5, aspect=5)
-    ax1.set_title(f'FEM (central diff, lumped M) at T={Tfinal} (case={SELECT_CASE})')
+    ax1.set_title(f'FEM at T={T} (case={SELECT_CASE})')
     ax1.set_xlabel('x'); ax1.set_ylabel('y'); ax1.set_zlabel('u')
     ax1.view_init(elev=30, azim=110)
     plt.tight_layout()
     plt.show()
 
-    print("dx=", dt, "maximum U :", np.max(u_num_grid))
+    print("dx=", dt, "maximum U :", np.max(u_FEM))
     # report timing + memory
     stop = timeit.default_timer()
     print('Time: ', stop - start)

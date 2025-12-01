@@ -1,4 +1,5 @@
 # ============================================================
+# Model problem:
 # PINN for u_tt - div(h ∇u) = f on (t,x,y) in [0,T] × [0,1]^2
 # IC and BC:
 #   u(0,x,y) = u0(x,y),
@@ -45,13 +46,13 @@ def u1(x, y):
     """Initial velocity u_t(0,x,y). For this test: identically zero."""
     return torch.zeros_like(x)
 
-def exact_u(t, x, y):
+def exact_solution(t, x, y):
     return torch.cos(t) * torch.sin(torch.pi * x) * torch.sin(torch.pi * y)
 
-def h(x, y):
+def h_coef(x, y):
     return x**2 + y**2
 
-def f(t, x, y):
+def f_func(t, x, y):
     # Right-hand side corresponding to u_tt - div(h ∇u) = f
     sxs = torch.sin(torch.pi * x); cxs = torch.cos(torch.pi * x)
     sys = torch.sin(torch.pi * y); cys = torch.cos(torch.pi * y)
@@ -145,13 +146,13 @@ def pde_residual_theta(u_model: PINNTrial, t, x, y):
     u_x  = grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_y  = grad(u, y, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    hv = h(x, y)
+    hv = h_coef(x, y)
     hux = hv * u_x
     duy_dx = grad(hux, x, grad_outputs=torch.ones_like(hux), create_graph=True)[0]
     huy = hv * u_y
     duy_dy = grad(huy, y, grad_outputs=torch.ones_like(huy), create_graph=True)[0]
 
-    R_theta = u_tt - (duy_dx + duy_dy) - f(t, x, y)
+    R_theta = u_tt - (duy_dx + duy_dy) - f_func(t, x, y)
     return R_theta
 
 def loss_residual(u_model: PINNTrial, t, x, y):
@@ -244,7 +245,7 @@ def pinn_energy(model, t_scalar, n=129, device=device, dtype=dtype):
     u_x = grad(u, x, grad_outputs=ones, create_graph=False, retain_graph=True)[0]
     u_y = grad(u, y, grad_outputs=ones, create_graph=False, retain_graph=True)[0]
 
-    hv = h(x, y)  # (n,n,1)
+    hv = h_coef(x, y)  # (n,n,1)
     integrand = 0.5 * (u_t**2 + hv * (u_x**2 + u_y**2))  # (n,n,1)
     integrand2d = integrand.squeeze(-1)
 
@@ -264,7 +265,7 @@ with torch.no_grad():
     X, Y = grid_xy(nvis, device=device)
     tT = torch.full_like(X, fill_value=T_final)
     u_pred_T = model(tT.reshape(-1,1), X.reshape(-1,1), Y.reshape(-1,1)).reshape(nvis, nvis)
-    u_true_T = exact_u(tT, X, Y).reshape(nvis, nvis)
+    u_true_T = exact_solution(tT, X, Y).reshape(nvis, nvis)
     errT = torch.abs(u_pred_T - u_true_T)
     max_err = errT.max().item()
     l2_err  = torch.sqrt(torch.mean((u_pred_T - u_true_T)**2)).item()
@@ -283,9 +284,9 @@ E_exact_series = exact_energy_np(ts)
 # -----------------------------
 # Visualization (final time)
 # -----------------------------
-U_pred = u_pred_T.detach().cpu().numpy()
+u_PINN = u_pred_T.detach().cpu().numpy()
 U_true = u_true_T.detach().cpu().numpy()
-Err    = np.abs(U_pred - U_true)
+Err    = np.abs(u_PINN - U_true)
 Xn, Yn = X.detach().cpu().numpy(), Y.detach().cpu().numpy()
 
 fig = plt.figure(figsize=(18,5))
@@ -294,7 +295,7 @@ ax1.plot_surface(Xn, Yn, U_true, cmap='viridis')
 ax1.set_title(r'Exact $u(x,y,T)$'); ax1.set_xlabel('x'); ax1.set_ylabel('y'); ax1.set_zlabel('u')
 
 ax2 = fig.add_subplot(132, projection='3d')
-ax2.plot_surface(Xn, Yn, U_pred, cmap='viridis')
+ax2.plot_surface(Xn, Yn, u_PINN, cmap='viridis')
 ax2.set_title(r'PINN $u_\theta(x,y,T)$'); ax2.set_xlabel('x'); ax2.set_ylabel('y'); ax2.set_zlabel('u')
 
 ax3 = fig.add_subplot(133, projection='3d')

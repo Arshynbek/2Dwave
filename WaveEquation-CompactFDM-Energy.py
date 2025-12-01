@@ -1,3 +1,16 @@
+# ============================================================
+# Model problem:
+# u_tt - div(h ∇u) = f on (t,x,y) in [0,T] × [0,1]^2
+# IC and BC:
+#   u(0,x,y) = u0(x,y),
+#   u_t(0,x,y) = u1(x,y) (here u1 ≡ 0),
+#   u|_{∂Ω} = 0.
+# Exact solution: u(t,x,y) = cos(t) sin(πx) sin(πy),
+# h(x,y) = x^2 + y^2,   f chosen accordingly.
+# ============================================================
+
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed for 3D)
@@ -217,8 +230,7 @@ if __name__ == "__main__":
     dt = 1/80
 
     results = wave_solver_mac4(Nx=Nx, Ny=Ny, T=T, dt=dt, track_energy=True)
-    (X, Y, u_num, u_exact_T, err, max_err, L2_err,
-     times, E_num, E_ex) = results
+    (X, Y, u_FDM, u_exact_T, err, max_err, L2_err, times, E_num, E_ex) = results
 
     print(f"N={Nx}, T={T}, dt={dt}")
     print(f"Max error = {max_err:.6e}")
@@ -229,7 +241,7 @@ if __name__ == "__main__":
 
     # Numerical solution
     ax1 = fig.add_subplot(131, projection='3d')
-    ax1.plot_surface(X, Y, u_num, cmap='viridis', rstride=1, cstride=1)
+    ax1.plot_surface(X, Y, u_FDM, cmap='viridis', rstride=1, cstride=1)
     ax1.set_title('Numerical Solution at T')
     ax1.set_xlabel('x'); ax1.set_ylabel('y'); ax1.set_zlabel('u')
 

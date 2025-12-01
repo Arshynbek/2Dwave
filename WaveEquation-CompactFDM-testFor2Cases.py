@@ -10,6 +10,28 @@ import tracemalloc
 
 tracemalloc.start()
 start = timeit.default_timer()
+
+
+# -------------------------
+# Piecewise h(x) (Cases 1 & 2)
+# -------------------------
+def h_case_vals(x, case_id):
+    """
+    x: array of x-locations (faces)
+    case_id: 1 or 2
+    returns h(x) with broadcasting over y.
+    """
+    if case_id == 1:
+        # Case 1
+        h = np.where(x < 0.75, 1.0, 0.1)
+    elif case_id == 2:
+        # Case 2
+        h = np.where(x < 0.3, 1.0,
+                     np.where(x < 0.8, 1.0 - 1.8*(x - 0.3), 0.1))
+    else:
+        raise ValueError("Unknown case_id (use 1 or 2).")
+    return h
+
 # -------------------------
 # Grids
 # -------------------------
@@ -93,25 +115,6 @@ def div_y_from_faces(Fy, dy):
                  + 5/24*Fy[:,Ny-4] - 1/24*Fy[:,Ny-5]) / dy
     return d
 
-# -------------------------
-# Piecewise h(x) (Cases 1 & 2)
-# -------------------------
-def h_case_vals(x, case_id):
-    """
-    x: array of x-locations (faces)
-    case_id: 1 or 2
-    returns h(x) with broadcasting over y.
-    """
-    if case_id == 1:
-        # Case 1
-        h = np.where(x < 0.75, 1.0, 0.1)
-    elif case_id == 2:
-        # Case 2
-        h = np.where(x < 0.3, 1.0,
-                     np.where(x < 0.8, 1.0 - 1.8*(x - 0.3), 0.1))
-    else:
-        raise ValueError("Unknown case_id (use 1 or 2).")
-    return h
 
 def L4_MAC(u, dx, dy, Xfx, Yfx, Xfy, Yfy, case_id):
     """
@@ -261,20 +264,14 @@ def animate_surface_fast(x, y, frames, case_id, stride_frames=3, rstride=1, cstr
 # Set SELECT_CASE = 1 or 2
 # -------------------------
 SELECT_CASE = 1  # change to 2 to run the second case only
-
 # Solver parameters
+T  = 0.0
 Nx = Ny = 160
-
-T  = 0.75
 CFL = 0.25
 STORE_EVERY = 1  # keep every 2nd step for animation
 
 # Run the chosen case
-# x, y, U_T, frames, dt, Nt, T_end = wave_solver_mac4_piecewise(
-#     Nx=Nx, Ny=Ny, T=T, CFL=CFL, case_id=SELECT_CASE, store_every=STORE_EVERY
-# )
-
-x, y, Xc, Yc, u0, U_T, frames, dt, Nt, T_end, case_id = wave_solver_mac4_piecewise(
+x, y, Xc, Yc, u0, U_FDM, frames, dt, Nt, T_end, case_id = wave_solver_mac4_piecewise(
     Nx=Nx, Ny=Ny, T=T, CFL=CFL, case_id=SELECT_CASE, store_every=STORE_EVERY
 )
 
@@ -285,14 +282,13 @@ print(f"Case {SELECT_CASE}: Nx={Nx}, Ny={Ny}, T={T_end:.4f}, dt≈{dt:.4e}, Nt={
 #plot_u0_and_H(Xc, Yc, u0, case_id)
 
 # Final surface
-plot_surface_final(x, y, U_T, case_id, title=f"Case {SELECT_CASE}, t={T_end:.2f}")
-
+plot_surface_final(x, y, U_FDM, case_id, title=f"FDM at T={T} (case={SELECT_CASE})")
 # gif_path, ok, kept = animate_surface_fast(x, y, frames, case_id=1, stride_frames=3, rstride=1, cstride=1, interval_ms=80)
 # print("Saved:", ok, "frames kept:", kept, "->", gif_path)# -------------------------
 #
 # #
 # report timing + memory
-print("dx=", dt, "maximum U :", np.max(U_T))
+print("dx=", dt, "maximum U :", np.max(U_FDM))
 stop = timeit.default_timer()
 print('Time: ', stop - start)
 current, peak = tracemalloc.get_traced_memory()
