@@ -2,7 +2,7 @@
 Mass-lumped P1 FEM with explicit leapfrog time stepping for the common
 heterogeneous benchmark.
 
-Run TsunamiEquation_ComplexCase_FDM.py first. This script loads
+This script loads
 "fdm_complex_results/fdm_reference.npz" and produces:
   * an independently refined FEM reference solution;
   * FDM--FEM reference-agreement diagnostics;
