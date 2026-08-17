@@ -7,9 +7,6 @@ Problem
     u(0,x,y) = u0(x,y),
     u_t(0,x,y) = 0.
 
-This version keeps the successful ingredients of the original PINN
-(tanh MLP, normalized inputs, Sobol collocation, Adam -> L-BFGS), but fixes
-three issues observed in the previous causal-slab calculation:
 
 1. HARD STATE TRANSFER BETWEEN SLABS.
    For every slab [ta,tb], both displacement and velocity at t=ta are built
@@ -18,7 +15,7 @@ three issues observed in the previous causal-slab calculation:
    penalty is used.
 
 2. PER-SLAB RESIDUAL NORMALIZATION.
-   The PDE residual on each slab is normalized by the RMS magnitude of
+   The PDE residual on each slab is normalised by the RMS magnitude of
    div(h grad u_left) at the left state of that slab, instead of using the
    very large initial-acceleration scale for all slabs.
 
@@ -30,7 +27,7 @@ three issues observed in the previous causal-slab calculation:
 
 4. DOUBLE PRECISION.
    float64 is used because the loss contains second derivatives of a narrow
-   localized pulse.
+   localised pulse.
 
 The FDM reference is loaded only for evaluation and plotting, never for PINN
 training.
