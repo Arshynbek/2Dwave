@@ -1,7 +1,7 @@
 # ============================================================
 # PINN for u_tt - div(H grad u) = f on [0,T] x [0,1]^2
 #
-# This version keeps the structure of the original code and adds only:
+# This code:
 #   1. reproducible train/evaluate functions,
 #   2. final-time L2, relative L2, Linfinity and relative H1 errors,
 #   3. independent space-time solution and residual errors,
